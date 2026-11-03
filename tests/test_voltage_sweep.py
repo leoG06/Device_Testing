@@ -64,7 +64,7 @@ if CURRENT_DIR not in sys.path:
 import pyvisa
 
 # Import the HP 4145 instrument class from the DOpeS library.
-from dopes.equipment_control.hp4145 import hp4145
+from hp4145 import hp4145
 
 # Import VISA diagnostic utility to allow inline bus testing and error diagnostics
 from test_visa_connection import check_visa_connection
@@ -87,8 +87,8 @@ def parse_arguments():
     parser.add_argument(
         "--address",
         type=str,
-        default="GPIB0::17::INSTR",
-        help="VISA resource string for the HP 4145 (e.g., 'GPIB0::17::INSTR')",
+        default="GPIB0::16::INSTR",
+        help="VISA resource string for the HP 4145 (e.g., 'GPIB0::16::INSTR')",
     )
 
     # Sweep Parameters

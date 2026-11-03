@@ -51,7 +51,7 @@ def check_visa_connection(target_address=None):
         resources = ()
 
     # 3. Test communication with target address if provided
-    addr = target_address or ("GPIB0::17::INSTR" if "GPIB0::17::INSTR" in resources else None)
+    addr = target_address or ("GPIB0::16::INSTR" if "GPIB0::16::INSTR" in resources else None)
     if addr:
         print("\n" + "-" * 78)
         print(f"Testing direct communication with target: {addr} ...")
