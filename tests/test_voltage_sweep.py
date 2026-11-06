@@ -317,11 +317,11 @@ def main():
         # ----------------------------------------------------------------------
         # Step 5: Format and Print Tabular Results to stdout
         # ----------------------------------------------------------------------
-        print("\n" + "=" * 80)
+        print("\n" + "=" * 42)
         print(f" MEASUREMENT RESULTS (Header: {header})")
-        print("=" * 80)
-        print(f"{'Point':>6} | {'Voltage (V)':>14} | {'Current (A)':>16} | {'Current (mA)':>14} | {'Apparent R (Ω)':>16}")
-        print("-" * 80)
+        print("=" * 42)
+        print(f"{'Point':>6} | {'Voltage (V)':>14} | {'Current (mA)':>14}")
+        print("-" * 42)
 
         # data[:, 0] contains the swept voltage points
         # data[:, 1] contains the measured current for the active channel (SMU1)
@@ -330,12 +330,9 @@ def main():
 
         for idx, (v, i) in enumerate(zip(v_vals, i_vals)):
             i_ma = i * 1e3
-            # Apparent resistance R = |V / I| (avoids divide-by-zero near V = 0)
-            r_app = abs(v / i) if abs(i) > 1e-12 else float("nan")
-            r_str = f"{r_app:16.2f}" if not np.isnan(r_app) else f"{'N/A (V≈0)':>16}"
-            print(f"{idx + 1:6d} | {v:14.4f} | {i:16.6E} | {i_ma:14.4f} | {r_str}")
+            print(f"{idx + 1:6d} | {v:14.4f} | {i_ma:14.4f}")
 
-        print("-" * 80)
+        print("-" * 42)
 
         # ----------------------------------------------------------------------
         # Step 6: Export to CSV for TLM Analysis Pipeline
