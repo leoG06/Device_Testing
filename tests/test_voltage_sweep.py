@@ -338,34 +338,7 @@ def main():
         print("-" * 80)
 
         # ----------------------------------------------------------------------
-        # Step 6: Statistical Analysis & Ohmic Contact Slope Extraction
-        # ----------------------------------------------------------------------
-        print("\n" + "=" * 32 + " SWEEP SUMMARY " + "=" * 33)
-        print(f" • Total Measurement Points : {len(v_vals)}")
-        print(f" • Voltage Sweep Range      : [{v_vals[0]:+.4f} V, {v_vals[-1]:+.4f} V]")
-        print(f" • Current Range Measured   : [{i_vals.min():+.6E} A, {i_vals.max():+.6E} A]")
-
-        # Perform linear regression in the un-saturated region (|I| < 95% compliance)
-        # to extract the differential resistance (R = dV/dI = 1 / slope).
-        linear_mask = (abs(i_vals) < 0.95 * args.compliance)
-        if np.sum(linear_mask) >= 2:
-            # Fit I = slope * V + intercept
-            slope, intercept = np.polyfit(v_vals[linear_mask], i_vals[linear_mask], 1)
-            diff_r = 1.0 / slope if slope != 0 else float("inf")
-            print(f" • Ohmic Conductance (dI/dV): {slope:.6E} S (Siemens)")
-            print(f" • Differential Resistance  : {diff_r:,.2f} Ω")
-
-        # Check whether any measurement point hit the compliance ceiling
-        compliance_hit = np.any(np.isclose(abs(i_vals), args.compliance, rtol=1e-2))
-        if compliance_hit:
-            print(" • Compliance Status        : WARNING - Current compliance limit was reached!")
-            print("                              Increase --compliance or reduce sweep voltage.")
-        else:
-            print(" • Compliance Status        : Normal (All readings within linear compliance)")
-        print("=" * 80)
-
-        # ----------------------------------------------------------------------
-        # Step 7: Export to CSV for TLM Analysis Pipeline
+        # Step 6: Export to CSV for TLM Analysis Pipeline
         # ----------------------------------------------------------------------
         # Writes data in the exact 2-column format ("Voltage,Current") expected by
         # DataExtraction.py and the Jupyter analysis notebook (TLMAnalysis.ipynb).
@@ -380,7 +353,7 @@ def main():
 
     finally:
         # ----------------------------------------------------------------------
-        # Step 8: Safe Instrument Session Cleanup
+        # Step 7: Safe Instrument Session Cleanup
         # ----------------------------------------------------------------------
         # Ensure the PyVISA session is closed even if an unexpected exception occurs,
         # preventing the GPIB bus from hanging on subsequent executions.
