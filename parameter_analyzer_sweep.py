@@ -28,22 +28,22 @@ Description:
 
 Usage Examples:
     # 1. Two-terminal I-V, same as test_voltage_sweep.py defaults (SMU1 sweeps, SMU2 common):
-    python test_sweep.py --start -1 --stop 1 --step 0.05 --compliance 10e-3
+    python parameter_analyzer_sweep.py --start -1 --stop 1 --step 0.05 --compliance 10e-3
 
     # 2. MOSFET output curve: drain SMU1 swept 0-3 V, gate SMU3 at 1.5 V, source SMU2 common:
-    python test_sweep.py --smu1 sweep-v --smu2 com --smu3 v:1.5:1e-6 --start 0 --stop 3 --step 0.05 --compliance 20e-3
+    python parameter_analyzer_sweep.py --smu1 sweep-v --smu2 com --smu3 v:1.5:1e-6 --start 0 --stop 3 --step 0.05 --compliance 20e-3
 
     # 3. MOSFET transfer curve: gate SMU3 swept, drain SMU1 at 0.1 V:
-    python test_sweep.py --smu1 v:0.1:20e-3 --smu2 com --smu3 sweep-v --start -1 --stop 3 --step 0.05 --compliance 1e-6
+    python parameter_analyzer_sweep.py --smu1 v:0.1:20e-3 --smu2 com --smu3 sweep-v --start -1 --stop 3 --step 0.05 --compliance 1e-6
 
     # 4. BJT output curve: collector SMU1 swept, base SMU3 forced at 10 uA, emitter SMU2 common:
-    python test_sweep.py --smu1 sweep-v --smu2 com --smu3 i:10e-6:2 --start 0 --stop 5 --step 0.1 --compliance 50e-3
+    python parameter_analyzer_sweep.py --smu1 sweep-v --smu2 com --smu3 i:10e-6:2 --start 0 --stop 5 --step 0.1 --compliance 50e-3
 
     # 5. Diode forward voltage vs current (current sweep, log 10 points/decade):
-    python test_sweep.py --smu1 sweep-i --smu2 com --start 1e-9 --stop 1e-2 --sweep-type log --compliance 2
+    python parameter_analyzer_sweep.py --smu1 sweep-i --smu2 com --start 1e-9 --stop 1e-2 --sweep-type log --compliance 2
 
     # 6. Offline demo (built-in simulator: every active SMU tied to one node through 1 kOhm):
-    python test_sweep.py --smu1 sweep-v --smu2 com --smu3 v:0.5 --mock
+    python parameter_analyzer_sweep.py --smu1 sweep-v --smu2 com --smu3 v:0.5 --mock
 ================================================================================
 """
 
@@ -56,11 +56,12 @@ import time
 import numpy as np
 
 # ------------------------------------------------------------------------------
-# Path setup (same as test_voltage_sweep.py)
+# Path setup
 # ------------------------------------------------------------------------------
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
-for _p in (PROJECT_ROOT, CURRENT_DIR):
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+TESTS_DIR = os.path.join(PROJECT_ROOT, "tests")
+CSV_DIR = os.path.join(PROJECT_ROOT, "CSV")
+for _p in (PROJECT_ROOT, TESTS_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -122,10 +123,14 @@ def parse_arguments():
 
     # Output
     out = parser.add_argument_group("output")
-    out.add_argument("--save-csv", type=str, default="tests/hardware_sweep.csv",
-                     help="CSV with all channels ('' = don't save) (default: %(default)s)")
-    out.add_argument("--tlm-csv", type=str, default="",
-                     help="also write the old 2-column Voltage,Current file (sweep-v only)")
+    out.add_argument(
+        "--save-csv",
+        nargs="?",
+        const="CSV/hardware_sweep.csv",
+        default="",
+        metavar="PATH",
+        help="only save CSV when passed (optional filename inside CSV/, default: CSV/hardware_sweep.csv)",
+    )
     out.add_argument("--check-visa", action="store_true",
                      help="run the VISA diagnostic scan (test_visa_connection.py) first")
     out.add_argument("--mock", action="store_true",
@@ -323,12 +328,12 @@ def main():
     print("-" * 80)
 
     if args.check_visa and not args.mock:
-        from test_visa_connection import check_visa_connection
+        from tests.test_visa_connection import check_visa_connection
         check_visa_connection(target_address=args.address)
         print("-" * 80)
 
     # ---------------------------------------------------------------- connect
-    from hp4145 import hp4145
+    from tests.hp4145 import hp4145
     if args.mock:
         analyzer = hp4145.__new__(hp4145)          # skip the VISA connection
         analyzer.pyvisa_resource = MockResource()
@@ -417,7 +422,15 @@ def main():
 
     # main CSV: sweep value + every measured channel, 6 significant figures
     if args.save_csv:
-        path = os.path.abspath(args.save_csv)
+        raw_path = args.save_csv.strip()
+        if os.path.isabs(raw_path):
+            path = os.path.abspath(raw_path)
+        else:
+            parts = os.path.normpath(raw_path).split(os.sep)
+            while parts and parts[0] in (".", "CSV", "tests"):
+                parts = parts[1:]
+            rel = os.path.join(*parts) if parts else "hardware_sweep.csv"
+            path = os.path.abspath(os.path.join(CSV_DIR, rel))
         os.makedirs(os.path.dirname(path), exist_ok=True)
         cols_hdr = [f"{sweep_name}_set_{sweep_unit}"] + [f"{nm}_{unit_of(nm)}" for nm in meas_names]
         with open(path, "w") as f:
@@ -448,20 +461,6 @@ def main():
                             f.write(f"{p + 1},{data[p, 0]:.6E},{nm},{status[p, k]},"
                                     f"{STATUS_MEANING.get(status[p, k], '?')}\n")
             print(f"Flagged points saved to: {flag_path}")
-
-    # legacy two-column file for the TLM pipeline
-    if args.tlm_csv:
-        if setup["mode"] != "voltage" or master_meas not in meas_names:
-            print("! --tlm-csv needs a sweep-v SMU; skipped")
-        else:
-            k = meas_names.index(master_meas)
-            path = os.path.abspath(args.tlm_csv)
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w") as f:
-                f.write("Voltage,Current\n")
-                for v, i in zip(data[:, 0], data[:, k + 1]):
-                    f.write(f"{v:.6E},{i:.6E}\n")
-            print(f"TLM CSV (Voltage,Current) saved to: {path}")
 
 
 # ==============================================================================
