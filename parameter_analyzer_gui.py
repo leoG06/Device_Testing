@@ -54,7 +54,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT
 
-from tests import parameter_analyzer_sweep as ts
+import parameter_analyzer_sweep as ts
 from tests.hp4145 import hp4145
 
 
