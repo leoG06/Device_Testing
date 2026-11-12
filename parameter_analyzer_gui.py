@@ -24,12 +24,17 @@ import time
 import traceback
 from contextlib import redirect_stdout
 
+# ------------------------------------------------------------------------------
+# Path & environment bootstrap
+# ------------------------------------------------------------------------------
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 TESTS_DIR = os.path.join(PROJECT_ROOT, "tests")
 CSV_DIR = os.path.join(PROJECT_ROOT, "CSV")
 for path in (PROJECT_ROOT, TESTS_DIR):
     if path not in sys.path:
         sys.path.insert(0, path)
+# Append (rather than prepend) .venv packages so Anaconda's compiled C-extensions
+# (e.g., numpy/matplotlib) take precedence while pure-Python VISA libs remain available.
 for venv_site in glob.glob(os.path.join(PROJECT_ROOT, ".venv", "lib", "python*", "site-packages")):
     if venv_site not in sys.path:
         sys.path.append(venv_site)
@@ -37,6 +42,7 @@ for venv_site in glob.glob(os.path.join(PROJECT_ROOT, ".venv", "lib", "python*",
 try:
     from PyQt5 import QtCore, QtGui, QtWidgets
 except ImportError as exc:
+    # Fall back to Anaconda Python if launched from a venv without PyQt5.
     anaconda_py = "/opt/anaconda3/bin/python3"
     if (
         __name__ == "__main__"
@@ -58,6 +64,9 @@ import parameter_analyzer_sweep as ts
 from tests.hp4145 import hp4145
 
 
+# ------------------------------------------------------------------------------
+# UI limits, SMU role definitions, and SI unit parsing
+# ------------------------------------------------------------------------------
 MAX_HISTORY = 60
 MAX_LOG_BLOCKS = 10000
 MAX_OFFSETS = 50
@@ -82,6 +91,7 @@ SI_FACTORS = {
 
 
 def number(text, label, optional=False):
+    """Parse a float with optional SI suffix (e.g., '10m', '1u', '50n') and validate finiteness."""
     text = text.strip()
     if not text:
         if optional:
@@ -104,6 +114,7 @@ def number(text, label, optional=False):
 
 
 def output_path(text):
+    """Resolve relative output paths into the project's CSV/ directory."""
     text = text.strip()
     if os.path.isabs(text):
         return os.path.abspath(text)
@@ -116,12 +127,14 @@ def output_path(text):
 
 
 def scale(values, unit):
+    """Return an SI scaling factor and unit label ignoring NaN/Inf values."""
     values = np.asarray(values)
     finite = values[np.isfinite(values)]
     return ts.si_scale(finite, unit) if finite.size else (1.0, unit)
 
 
 def preset(roles, start, stop, step, comp, **extra):
+    """Build a preset configuration dictionary with sensible defaults."""
     result = dict(
         roles=roles, start=start, stop=stop, step=step,
         comp=comp, sweep_type="linear", integration="M",
@@ -192,6 +205,8 @@ PRESETS = {
 
 
 class SweepWorker(QtCore.QObject):
+    """Background worker that executes one or more HP 4145B sweeps and writes CSV outputs."""
+
     log = QtCore.pyqtSignal(str)
     progress = QtCore.pyqtSignal(str)
     curve = QtCore.pyqtSignal(object)
@@ -205,10 +220,12 @@ class SweepWorker(QtCore.QObject):
 
     @staticmethod
     def flush(file):
+        """Force buffered writes to disk after each completed curve."""
         file.flush()
         os.fsync(file.fileno())
 
     def metadata(self, args, setup, info, completed, started):
+        """Atomically write/update the companion _setup.txt summary file."""
         path = os.path.splitext(args.save_csv)[0] + "_setup.txt"
         temporary = path + ".tmp"
         with open(temporary, "w", encoding="utf-8") as file:
@@ -382,6 +399,8 @@ class SweepWorker(QtCore.QObject):
                     f"{flagged} flagged channel readings."
                 )
 
+            # Write a wide-format _family.csv (one column pair per stepped offset)
+            # when all curves share an identical sweep axis.
             if args0.save_csv and self.offset_info and len(runs) > 1:
                 reference = runs[0][0][:, 0]
                 if all(
@@ -530,10 +549,13 @@ class MeasurementModel(QtCore.QAbstractTableModel):
 
 
 class SweepMainWindow(QtWidgets.QMainWindow):
+    """Main application window for configuring, running, plotting, and inspecting sweeps."""
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("HP 4145 / 4145B — Sweep Controller")
         self.resize(1350, 850)
+        # Re-entrancy guard used when synchronizing SMU roles and stepped-offset widgets.
         self.updating = False
         self.thread = None
         self.worker = None
@@ -548,18 +570,21 @@ class SweepMainWindow(QtWidgets.QMainWindow):
         self.validate()
 
     def combo(self, choices):
+        """Create a QComboBox populated from (data, label) pairs."""
         widget = QtWidgets.QComboBox()
         for value, label in choices:
             widget.addItem(label, value)
         return widget
 
     def group(self, title, parent_layout):
+        """Create a titled QGroupBox with an inner QGridLayout."""
         box = QtWidgets.QGroupBox(title)
         grid = QtWidgets.QGridLayout(box)
         parent_layout.addWidget(box)
         return box, grid
 
     def build_ui(self):
+        """Construct the split-pane UI (left configuration form, right plot/table/log tabs)."""
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
         root = QtWidgets.QVBoxLayout(central)
@@ -808,6 +833,7 @@ class SweepMainWindow(QtWidgets.QMainWindow):
         widget.setCurrentIndex(widget.findData(key))
 
     def role_changed(self, smu):
+        """Keep SMU step-v/step-i roles synchronized with the stepped-offset panel."""
         if self.updating:
             return
         self.updating = True
@@ -896,6 +922,7 @@ class SweepMainWindow(QtWidgets.QMainWindow):
         self.validate()
 
     def apply_preset(self, name):
+        """Populate all form fields from a named preset in PRESETS."""
         settings = PRESETS.get(name)
         if not settings:
             return
@@ -950,6 +977,7 @@ class SweepMainWindow(QtWidgets.QMainWindow):
         self.validate()
 
     def offsets(self):
+        """Parse stepped-offset parameters for multi-curve family sweeps, or return None."""
         if not self.multi.isChecked():
             return None
         if self.offset_spec.currentData() == "list":
@@ -986,6 +1014,7 @@ class SweepMainWindow(QtWidgets.QMainWindow):
         )
 
     def build_jobs(self):
+        """Validate UI inputs via parameter_analyzer_sweep.build_setup() and build sweep jobs."""
         info = self.offsets()
         delay = number(self.delay.text(), "Delay")
         hold = number(self.hold.text(), "Hold")
@@ -1050,6 +1079,7 @@ class SweepMainWindow(QtWidgets.QMainWindow):
         return jobs, info
 
     def cli(self, args):
+        """Format an equivalent parameter_analyzer_sweep.py CLI command for the first curve."""
         import shlex
         parts = [sys.executable, os.path.join(PROJECT_ROOT, "parameter_analyzer_sweep.py")]
         for key in [
@@ -1067,6 +1097,7 @@ class SweepMainWindow(QtWidgets.QMainWindow):
         return " ".join(shlex.quote(part) for part in parts)
 
     def validate(self, *_):
+        """Enable/disable dependent inputs and update live validation and CLI preview."""
         if self.updating:
             return
         multi = self.multi.isChecked()
@@ -1131,6 +1162,7 @@ class SweepMainWindow(QtWidgets.QMainWindow):
         self.log_view.appendPlainText(str(text))
 
     def start_sweep(self):
+        """Confirm file overwrites, reset batch state, and launch SweepWorker in a QThread."""
         if self.thread is not None:
             return
         try:
@@ -1298,6 +1330,7 @@ class SweepMainWindow(QtWidgets.QMainWindow):
             self.append_log(traceback.format_exc())
 
     def draw_plot(self, *_):
+        """Render compatible curves in SI-scaled units and highlight flagged points."""
         try:
             self.ax.clear()
             if not self.history:
@@ -1399,6 +1432,7 @@ class SweepMainWindow(QtWidgets.QMainWindow):
 
 
 def main():
+    """Initialize the Qt application, install a GUI exception hook, and run the event loop."""
     app = QtWidgets.QApplication.instance()
     if app is None:
         app = QtWidgets.QApplication(
