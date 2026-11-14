@@ -1,3 +1,4 @@
+ ### Introduction
 A GUI that interfaces with the 4145B Semiconductor Parameter Analyzer made for a microfabrication course in UF
 
 The GUI is able to connect to 4 different probes and customize each of the SMU to the respective VAR1, VAR2, COM, GND, VAR1' in the 4145b machine
@@ -18,6 +19,9 @@ Compliance is used to limit the amount of current allowed in the system for safe
 
 The hard limit is 100mA and 100 V, but varrying combination of voltage-current would not be allowed too like for example 100mA only allows up to 20V and 40V only allows up to 50mA.
 
+### download
+
+Click the green code button and download as zip file. Remember to also check out the the dependencies
 
 ### DEPENDENCIES
 
@@ -70,3 +74,10 @@ Transistor saturation curve
 > [dopes gitlab link aka chopes](https://forge.uclouvain.be/LocLahaye/chopes)
 
 > [4145b manual link by keysight](https://www.keysight.com/dk/en/assets/9018-07935/service-manuals/9018-07935.pdf)
+
+
+### Bugs
+
+- there is a problem where SMU selection changes by itself
+- add a preset feature for certain devices
+- implement the ability to analyze data from multiple test runs maybe a different gui for that
